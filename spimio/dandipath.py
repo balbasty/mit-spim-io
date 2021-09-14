@@ -1,3 +1,13 @@
+"""
+This file implements DandiPath, a PathLike interface for remote dandisets.
+
+A DandiPath is instantiated using one of:
+```python
+p = DandiPath(<PathLike or str>, [dandiset=<RemoteDandiset>,])
+p = DandiPath(<PathLike or str>, [dandiset_id=<int or str>,] [version_id=<str>,] [client=<DandiAPIClient>,])
+```
+"""
+
 import pathlib
 import copy
 import requests

@@ -2,7 +2,7 @@ import os
 import urllib
 import json
 import h5py
-from .dandi import DandiPath
+from .dandipath import DandiPath
 
 
 def json_load(path):

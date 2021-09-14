@@ -1,5 +1,5 @@
-from .stream import json_load
-from .dandi import DandiPath
+from .streamio import json_load
+from .dandipath import DandiPath
 from pathlib import Path
 from os import PathLike
 import h5py
@@ -23,10 +23,18 @@ def name_to_keys(filename):
 def chunk_info(path):
     """Get info on a chunk
 
-    :param path: path_like
-    :return: {SampleStaining, SlabIndex, Subject, PixelSize, Shape, Shapes}
+    :param path: path_like to a chunk file
+    :return: {Path, SampleStaining, SlabIndex, Subject, PixelSize, Shape, Shapes}
     """
     info = dict()
+    info['Path'] = None
+    info['SampleStaining'] = None
+    info['SlabIndex'] = None
+    info['Subject'] = None
+    info['PixelSize'] = None
+    info['Shape'] = None
+    info['Shapes'] = None
+
     if not isinstance(path, PathLike):
         path = Path(path)
     if path.suffix not in ('.h5', '.json'):
@@ -41,6 +49,7 @@ def chunk_info(path):
         h5path = path.__class__(path.parent, path.stem + '.h5')
         if isinstance(path, DandiPath):
             h5path.remote = path.dandiset
+    info['Path'] = h5path
     basepath = path.stem.split('_')[:-1]
     basepath = '_'.join(basepath)
     trfpath = jsonpath.__class__(path.parent, basepath + '_transforms.json')
@@ -80,10 +89,10 @@ def chunk_info(path):
 def slab_info(path):
     """Get info on a slab.
     This assumes KC's bids-like organization: `path` is a folder that
-    contains fata for a single slab and a single subject.
+    contains data for a single slab and a single subject.
 
-    :param path: path_like
-    :return: {Stainings, Chunks, SlabIndex, Subject, PixelSize, Shape}
+    :param path: path_like to a slab directory
+    :return: {Stainings, Chunks, SlabIndex, Subject, PixelSize, Shape, FOV}
     """
 
     info = dict()
@@ -93,24 +102,42 @@ def slab_info(path):
     info['Subject'] = None
     info['PixelSize'] = None
     info['Shape'] = None
+    info['FOV'] = None
+    info['MetaChunks'] = []
 
     if not isinstance(path, PathLike):
         path = Path(path)
     h5files = path.glob('*.h5')
+
+    mn = [None, None, None]
+    mx = [None, None, None]
     for h5file in h5files:
         file_info = chunk_info(h5file)
+        info['MetaChunks'].append(file_info)
         if info['Subject'] and file_info['Subject'] != info['Subject']:
             raise ValueError('Several subjects in the same folder')
         info['Subject'] = file_info['Subject']
         if info['SlabIndex'] and file_info['SlabIndex'] != info['SlabIndex']:
             raise ValueError('Several slabs in the same folder')
         info['SlabIndex'] = file_info['SlabIndex']
-        if info['PixelSize'] and file_info['PixelSize'] != info['PixelSize']:
-            raise ValueError('Pixel size not consistent')
-        info['PixelSize'] = file_info['PixelSize']
+        if (info['PixelSize'] and file_info['PixelSize']
+                and file_info['PixelSize'] != info['PixelSize']):
+            raise ValueError('Pixel size not consistent:',
+                             info['PixelSize'], file_info['PixelSize'])
+        if file_info['PixelSize']:
+            info['PixelSize'] = file_info['PixelSize']
         if info['Shape'] and file_info['Shape'] != info['Shape']:
             raise ValueError('Shape not consistent')
         info['Shape'] = file_info['Shape']
+        mn1 = [0., 0., 0.]
+        mx1 = list(file_info['Shape'][-3:])
+        if 'Shift' in file_info:
+            off = file_info['Shift']
+            mn1 = [x + o for x, o in zip(mn1, off)]
+            mx1 = [x + o for x, o in zip(mx1, off)]
+        mn = [min(x, y) if x is not None else y for x, y in zip(mn, mn1)]
+        mx = [max(x, y) if x is not None else y for x, y in zip(mx, mx1)]
+
         # nb_levels = len(file_info['Shapes'])
         # if info['NbLevels'] and nb_levels != info['NbLevels']:
         #     raise ValueError('Number of levels not consistent')
@@ -118,11 +145,22 @@ def slab_info(path):
         info['Stainings'].append(file_info['SampleStaining'])
         info['Chunks'].append(file_info['Chunk'])
 
+    info['FOV'] = [mx1 - mn1 for mx1, mn1 in zip(mx, mn)]
     info['Stainings'] = set(info['Stainings'])
     info['Chunks'] = set(info['Chunks'])
     return info
 
 
+def all_slabs_info(path):
+    """Get info on all slabs in a dataset.
+    This assumes KC's bids-like organization: `path` is a folder that
+    contains slab subfolders for a single subject.
 
+    :param path: path_like to a subject directory
+    :return: List[slab_info]
+    """
 
-
+    if not isinstance(path, PathLike):
+        path = Path(path)
+    slab_dirs = path.glob('*/microscopy/')
+    return [slab_info(slab_dir) for slab_dir in slab_dirs]
