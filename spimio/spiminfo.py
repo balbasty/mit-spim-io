@@ -61,7 +61,13 @@ def chunk_info(path):
         info['SampleStaining'] = metadata.get('SampleStaining', None)
         metadata = name_to_keys(jsonpath)
         info['Subject'] = metadata['sub']
-        info['SlabIndex'] = metadata['sample']
+        idx = []
+        for x in metadata['sample']:
+            if x not in '0123456789':
+                break
+            idx.append(x)
+        idx = int(''.join(idx))
+        info['SlabIndex'] = idx
         info['Chunk'] = metadata['chunk']
     if h5path.exists():
         if isinstance(h5path, DandiPath):
@@ -74,8 +80,17 @@ def chunk_info(path):
         info['DataType'] = f['0'].dtype
         info['DataTypes'] = [f[f'{i}'].dtype for i in range(nb_levels)]
         metadata = name_to_keys(jsonpath)
-        info['Subject'] = metadata['sub']
-        info['SlabIndex'] = metadata['sample']
+        info['Subject'] = info['Subject'] or metadata['sub']
+        if 'sample' in metadata:
+            idx = []
+            for x in metadata['sample']:
+                if x not in '0123456789':
+                    break
+                idx.append(x)
+            idx = int(''.join(idx))
+            info['SlabIndex'] = info['SlabIndex'] or idx
+        if 'stain' in metadata:
+            info['SampleStaining'] = info['SampleStaining'] or metadata['stain']
         info['Chunk'] = metadata['chunk']
     if trfpath.exists():
         metadata = json_load(trfpath)[0]
@@ -83,6 +98,7 @@ def chunk_info(path):
         info['Shift'] = [metadata.get('XOffset', 0.0),
                          metadata.get('YOffset', 0.0),
                          metadata.get('ZOffset', 0.0)]
+#     print(info)
     return info
 
 
@@ -118,7 +134,8 @@ def slab_info(path):
             raise ValueError('Several subjects in the same folder')
         info['Subject'] = file_info['Subject']
         if info['SlabIndex'] and file_info['SlabIndex'] != info['SlabIndex']:
-            raise ValueError('Several slabs in the same folder')
+            raise ValueError('Several slabs in the same folder', 
+                             info['SlabIndex'], file_info['SlabIndex'])
         info['SlabIndex'] = file_info['SlabIndex']
         if (info['PixelSize'] and file_info['PixelSize']
                 and file_info['PixelSize'] != info['PixelSize']):
